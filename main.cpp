@@ -9,9 +9,15 @@
 #include <omp.h>
 #include<chrono>
 #include<math.h>
+#include<pthread.h>
 
-#include "kseq.h"
-#include "strobemer.h"
+
+#include "originCode/kseq.h"
+#include "originCode/strobemer.h"
+#include"io/FastxChunk.h"
+#include"io/FastxStream.h"
+#include"io/DataQueue.h"
+#include"io/Formater.h"
 KSEQ_INIT(gzFile, gzread)
 /*
 1看看chopstrobemer和另外的方法能不能合并
@@ -46,7 +52,89 @@ bool check(char *s){
     return false;
 }
 
+//临界区定义
+pthread_mutex_t  output_mutex;
 
+int producer_task(std::string file,rabbit::fa::FastaDataPool & fastapool,rabbit::core::TDataQueue<rabbit::fa::FastaChunk> &dq){
+    rabbit::fa::FastaFileReader faFileReader(file,fastapool);
+    rabbit::int64 n_chunks=0;
+
+    while(true){
+        rabbit::fa::FastaChunk* fachunk;
+        fachunk = faFileReader.readNextChunkList();
+        if (fachunk== NULL) break;
+        n_chunks++;
+        dq.Push(n_chunks,fachunk);
+    }
+    dq.SetCompleted();
+    //pthread_mutex_lock(&output_mutex);
+    //std::cout<<"file  "<<file<<"  has  "<<n_chunks<<"  chunks  "<<std::endl;
+    //pthread_mutex_unlock(&output_mutex);
+    return 0;
+}
+
+int consumer_task(std::string output_file,rabbit::fa::FastaDataPool& fastapool,rabbit::core::TDataQueue<rabbit::fa::FastaChunk> & dq,int  n_threads){
+
+    long line_sum=0;
+    rabbit::int64 id=0;
+    std::vector<Reference> data;
+    rabbit::fa::FastaChunk *fachunk;
+    data.resize(10000);
+    while(dq.Pop(id,fachunk)){
+       line_sum += rabbit::fa::chunkFormat(*fachunk,data);
+       fastapool.Release(fachunk->chunk);
+    }
+
+    
+
+    
+    // for(int j=0;j<data.size();j++){
+    //     if(data[j].length!=0)
+    //     std:cout<<data[j].length<<std::endl;
+    // }
+    #pragma omp parallel for num_threads(n_threads)
+    for(int i=0;i<data.size();i++){
+       
+        Reference current=data[i];
+        int number =current.length-strobemer::strobmer_span()+1; 
+
+        if(number<0) continue;
+
+        //std::cout<<"seq是："<<current.seq<<std::endl;
+        // std::cout<<"length的值是："<<current.length<<std::endl;
+        // std::cout<<"number的值是："<<number<<std::endl;
+        // std::cout<<"span的值是："<<strobemer::strobmer_span()<<std::endl;
+        int validLength=0;
+        //std::cout<<"程序断点1"<<std::endl;
+        strobemer * buff = new strobemer[number];
+        //std::cout<<"程序断点2"<<std::endl;
+        strobemer::chop_randstrobe_byKmer(current.seq.c_str(),current.length,buff,validLength);
+
+        pthread_mutex_lock(&output_mutex);
+        std::ofstream outputStream;
+        outputStream.open(output_file);//这是多线程共享的吗 是不是需要临界区
+        //std::cout<<"程序断点3"<<std::endl;
+        outputStream<<">"<<current.name<<'\n';
+        for(int j=0;j<=validLength;j++){
+            //std::cout<<"validLength为"<<validLength<<std::endl;
+            //if(buff[i].valid){
+                 outputStream<<buff[j].to_string()<<'\n';
+                 //std::cout<<buff[i].to_string()<<"\n";
+            //}
+           
+        }
+        //std::cout<<"程序断点4"<<std::endl;
+        outputStream.close();
+        pthread_mutex_unlock(&output_mutex);
+        delete []buff;
+        
+        
+    }
+    
+    //std::cout<<"line_sum    "<<line_sum<<std::endl;
+    std::vector<Reference>().swap(data);//释放vector
+    return 0;
+}
 
 
 
@@ -137,6 +225,9 @@ int main(int argc, char *argv[])
 		 return 0;
 	 }
 	 
+
+     //初始化临界区
+    pthread_mutex_init(&output_mutex,NULL);
    
 	// Record  start time
     auto start = std::chrono::high_resolution_clock::now(); 
@@ -167,48 +258,71 @@ int main(int argc, char *argv[])
     // }
 
     // rewinddir(dirp);
+
     
-    #pragma omp parallel for num_threads(n_threads)
-    for (int i = 1; i <= total; i++)
-    {   
-        
+   
+    
+    //#pragma omp parallel for num_threads(n_threads)
+    
+    for (int i = 1; i <= total; i++){   
+    //while (((direntp=readdir(dirp))!=NULL)){    
         direntp=readdir(dirp);
         //尝试读取fasta文件中的序列
         //std::cout<<direntp->d_name<<std::endl;
         if(!check(direntp->d_name)) continue;
         
-        gzFile fp;
-        kseq_t *seq;
-        int l;
-         
         std::string d_name=direntp->d_name;
+
+        rabbit::fa::FastaDataPool datapool(32,1<<22);
+        rabbit::core::TDataQueue<rabbit::fa::FastaChunk> queue1(64,1);
+
+        std::thread producer(producer_task,path+d_name,std::ref(datapool),std::ref(queue1));
+        std::vector<std::thread> consumers;
+
+        for(int i=0;i<n_threads;i++){
+            consumers.emplace_back(std::thread(consumer_task,output_path+d_name,std::ref(datapool),std::ref(queue1),n_threads));
+        }
+
+        producer.join();
+
+        for(int t=0;t<n_threads;t++){
+            consumers[t].join();
+            
+        }
+       
+        
+        // gzFile fp;
+        // kseq_t *seq;
+        // int l;
+         
+        
         //std::cout<<"执行到这,文件路径是："<<path+d_name<<std::endl;
         
-        std::ofstream output_file;
-        output_file.open(output_path+d_name);
+        // std::ofstream output_file;
+        // output_file.open(output_path+d_name);
         //std::cout<<"执行到这,文件路径是："<<output_path+d_name<<std::endl;
 
-        fp=gzopen((path+d_name).c_str(),"r");
-        seq= kseq_init(fp);
+        // fp=gzopen((path+d_name).c_str(),"r");
+        // seq= kseq_init(fp);
        
-        while ((l = kseq_read(seq)) >= 0) {
+        // while ((l = kseq_read(seq)) >= 0) {
     
-            int number = seq->seq.l-strobemer::strobmer_span()+1; 
-            strobemer * buff = new strobemer[number];
-            strobemer::chop_strobemer(seq->seq.s,seq->seq.l,buff);
-            output_file<<">"<<seq->name.s<<'\n';
-            //std::cout<<"序列名："<<seq->name.s<<std::endl;
-            for(int i = 0 ; i< number ; i++ ){
-                if(buff[i].valid)
-                    output_file<<buff[i].to_string()<<'\n'; // or do whatever you want ...
-                    //std::cout<<buff[i].to_string()<<'\n';;
-            }
+        //     int number = seq->seq.l-strobemer::strobmer_span()+1; 
+        //     strobemer * buff = new strobemer[number];
+        //     strobemer::chop_strobemer(seq->seq.s,seq->seq.l,buff);
+        //     output_file<<">"<<seq->name.s<<'\n';
+        //     //std::cout<<"序列名："<<seq->name.s<<std::endl;
+        //     for(int i = 0 ; i< number ; i++ ){
+        //         if(buff[i].valid)
+        //             output_file<<buff[i].to_string()<<'\n'; // or do whatever you want ...
+        //             //std::cout<<buff[i].to_string()<<'\n';;
+        //     }
             
-            delete [] buff;
-	    }
-        output_file.close();
-        kseq_destroy(seq);
-	    gzclose(fp);
+        //     delete [] buff;
+	    // }
+        // output_file.close();
+        // kseq_destroy(seq);
+	    // gzclose(fp);
         
 
         //int rank=omp_get_thread_num();
@@ -219,7 +333,8 @@ int main(int argc, char *argv[])
    
     }
     closedir(dirp);
-   
+    pthread_mutex_destroy(&output_mutex);
+    
     
     // while (((direntp=readdir(dirp))!=NULL)){
         
@@ -267,7 +382,7 @@ int main(int argc, char *argv[])
 
         
         
-    // }
+    //}
     //std::cout<<"count:"<<count<<std::endl;
     
 	//output_file.close();
