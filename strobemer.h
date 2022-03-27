@@ -16,7 +16,10 @@ class strobemer {
     public:
         static void init(int n, int k, int w_min, int w_max , strobemer_type t) ;
         static void chop_strobemer(const char * seq,int len, strobemer * buff);
-        static void chop_randstrobe_byKmer(const char * seq,int len,strobemer *buff,int & validLength);
+        //static void chop_minstrobe_byKmer(const char * seq,int len, strobemer * buff,int &validLength);
+        static void chop_strobemer_byKmer(const char *seq,int len,strobemer *buff,int& validLength);
+        //static void chop_randstrobe_byKmer(const char * seq,int len,strobemer *buff,int &validLength);
+        //static void chop_hybridstrobe_byKmer(const char * seq,int len, strobemer * buff,int &validLength);
         static int strobmer_span() { return span ; }
     private:
         static int nkmer;
@@ -39,11 +42,11 @@ class strobemer {
         char * kmer_forward ;//[nkmer][ksize];
     private:
         static void chop_minstrobe(const char * seq,int len, strobemer * buff);
-        static void chop_minstrobe_byKmer(const char * seq,int len, strobemer * buff);
+        static void chop_minstrobe_byKmer(const char * seq,int len, strobemer * buff,int &validLength);
         static void chop_randstrobe(const char * seq,int len, strobemer * buff);
-        
+        static void chop_randstrobe_byKmer(const char * seq,int len,strobemer *buff,int &validLength);
         static void chop_hybridstrobe(const char * seq,int len, strobemer * buff);
-        static void chop_hybridstrobe_byKmer(const char * seq,int len, strobemer * buff);
+        static void chop_hybridstrobe_byKmer(const char * seq,int len, strobemer * buff,int &validLength);
 }; // class strobemer
 
 

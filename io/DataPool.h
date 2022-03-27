@@ -79,8 +79,9 @@ class TDataPool {
 	 */
   void Acquire(DataType *&part_) {
     th::unique_lock<th::mutex> lock(mutex);
-
+    //std::cout<<"程序断点6"<<std::endl;
     while (partNum >= maxPartNum) partsAvailableCondition.wait(lock);
+    //std::cout<<"程序断点7"<<std::endl;
 
     ASSERT(availablePartsPool.size() > 0);
 

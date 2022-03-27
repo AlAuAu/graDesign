@@ -44,7 +44,9 @@ FastaChunk *FastaFileReader::readNextChunk() {
 */
 FastaChunk *FastaFileReader::readNextChunkList() {
   FastaDataChunk *part = NULL;
+  
   recordsPool.Acquire(part);
+  
   FastaChunk *dataPart = new FastaChunk;
   dataPart->chunk = part;
   FastaDataChunk *current = part;
@@ -54,7 +56,9 @@ FastaChunk *FastaFileReader::readNextChunkList() {
     //FastaDataChunk *current = part;
     while (continue_read) {
       FastaDataChunk *append = NULL;
+      //std::cout<<"程序断点4"<<std::endl;
       recordsPool.Acquire(append);
+      //std::cout<<"程序断点5"<<std::endl;
       if (ReadNextFaChunk_(append, this->seqInfos, continue_read)) {
         current->next = append;
         current = append;
@@ -63,6 +67,7 @@ FastaChunk *FastaFileReader::readNextChunkList() {
         break;
       }
     }
+    //std::cout<<"程序断点6"<<std::endl;
     return dataPart;
   } else {
     recordsPool.Release(part);

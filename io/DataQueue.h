@@ -37,9 +37,9 @@ class TDataQueue {
   typedef std::queue<std::pair<int64, DataType *> > part_queue; 
 
   const uint32 threadNum;
-  const uint32 maxPartNum;
+  // const uint32 maxPartNum;
   uint64 completedThreadMask;
-  uint32 partNum;
+  //uint32 partNum;
   uint64 currentThreadMask;
   part_queue parts;
 
@@ -50,6 +50,8 @@ class TDataQueue {
  public:
   static const uint32 DefaultMaxPartNum = 64; //default max part number 
   static const uint32 DefaultMaxThreadtNum = 64; // default max thread number
+  uint32 partNum;
+  const uint32 maxPartNum;
 
 	/*
 	 * @brief Constructor 
