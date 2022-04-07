@@ -10,14 +10,18 @@
 #include<chrono>
 #include<math.h>
 #include<pthread.h>
+#include<vector>
+#include<stdio.h>
+//#include<unistd.h>
 
-
+#include"consumerBuff.h"
 #include "originCode/kseq.h"
 #include "strobemer.h"
 #include"io/FastxChunk.h"
 #include"io/FastxStream.h"
 #include"io/DataQueue.h"
 #include"io/Formater.h"
+
 KSEQ_INIT(gzFile, gzread)
 /*
 1看看chopstrobemer和另外的方法能不能合并
@@ -49,144 +53,85 @@ bool check(char *s){
     int L;
     L = strlen(s);
     if (strcmp(s+L-3,"fna")==0 ) return true;
-    if (strcmp(s+L-3,"fasta")==0) return true;
+    if (strcmp(s+L-5,"fasta")==0) return true;
+    if (strcmp(s+L-2,"fa")==0)  return true;
     return false;
 }
 
 //临界区定义
-pthread_mutex_t  output_mutex;
-int file_count;
+//pthread_mutex_t  output_mutex;
+//int file_count;
 
-int producer_task(std::string path,rabbit::fa::FastaDataPool & fastapool,rabbit::core::TDataQueue<rabbit::fa::FastaChunk> &dq){
-    DIR *dirp;
-    struct dirent *direntp;
-    dirp=opendir(path.c_str());
-    int count=0;
-    int total=500;
+//定义需要计算的时间
+std::chrono::duration<double, std::micro> elapsed;
+std::chrono::duration<double, std::micro> elapsed1;
+
+
+int producer_task(std::string file,rabbit::fa::FastaDataPool & fastapool,rabbit::core::TDataQueue<rabbit::fa::FastaChunk> &dq){
+    
     rabbit::int64 n_chunks=0;
-    while (((direntp=readdir(dirp))!=NULL)){
-        count++;
-        if(!check(direntp->d_name)) continue;
-        std::string d_name=direntp->d_name;
-
-        rabbit::fa::FastaFileReader faFileReader(path+d_name,fastapool);
-        while(true){
+    
+    std::cout<<"数据的path是"<<file<<std::endl;
+    rabbit::fa::FastaFileReader faFileReader(file,fastapool);
+     while(true){
             rabbit::fa::FastaChunk* fachunk;
-            //std::cout<<"程序断点1"<<std::endl;
-            fachunk = faFileReader.readNextChunkList();
-            //std::cout<<"程序断点2"<<std::endl;
+            fachunk = faFileReader.readNextChunk();
             if (fachunk== NULL) break;
-                //std::cout<<"跳出内层循环"<<endl;
-                //std::cout<<"fastapool已经使用"<<fastapool.partNum<<"/32"<<std::endl;
-                //std::cout<<"dq已经使用"<<dq.partNum<<"/64"<<std::endl;
-                
-             
             n_chunks++;
             
             dq.Push(n_chunks,fachunk);
-            //std::cout<<"程序断点3"<<std::endl;
-        }
-        //if(count%100==0) std::cout<<"已完成:"<<count<<"/"<<total<<std::endl;
-        if (count>total) {
-            //std::cout<<"读完所有文件"<<std::endl;
-            break;
-        }
-        //std::cout<<"file  "<<to_string(count)<<"  has  "<<n_chunks<<"  chunks  "<<std::endl;
-        std::cout<<"file  "<<to_string(count)<<"读完了"<<std::endl;
-
     }
-    std::cout<<"生产者已经完成所有生产"<<std::endl;
-    closedir(dirp);
-    dq.SetCompleted();
-    //pthread_mutex_lock(&output_mutex);
     
-    //pthread_mutex_unlock(&output_mutex);
+    faFileReader.Close();
+    std::cout<<"生产者已经完成所有生产"<<std::endl;
+    dq.SetCompleted();
+    
     return 0;
 }
 
-int consumer_task(std::string output_file,rabbit::fa::FastaDataPool& fastapool,rabbit::core::TDataQueue<rabbit::fa::FastaChunk> & dq,int  n_threads){
+int consumer_task(std::string output_file,rabbit::fa::FastaDataPool& fastapool,rabbit::core::TDataQueue<rabbit::fa::FastaChunk> & dq,consumerBuff &consumerbuff){
     std::thread::id thread_id=this_thread::get_id();
     std::stringstream sin;
     sin <<thread_id;
     
 
     long line_sum=0;
+    int chunks_count=0;
     rabbit::int64 id=0;
     std::vector<Reference> data;
     rabbit::fa::FastaChunk *fachunk;
-
-    int chunks_count=0;
-    
-    pthread_mutex_lock(&output_mutex);
-    std::string outputName=output_file+"output"+to_string(file_count)+".fasta";
-    file_count++;
-    //std::cout<<"线程"+sin.str()+"的输出文件路径是"<<outputName<<std::endl;
-    pthread_mutex_unlock(&output_mutex);
-    
-    
     data.resize(10000);
+    
     while(dq.Pop(id,fachunk)){
-       std::ofstream outputStream;
-       outputStream.open(outputName);//这是多线程共享的吗 是不是需要临界区
-
+       //std::cout<<"data的size为"<<data.size()<<std::endl;
+       data.clear();
        line_sum += rabbit::fa::chunkFormat(*fachunk,data);
+      //std::cout<<"line_sum是"<<line_sum<<std::endl;
        fastapool.Release(fachunk->chunk);
-        for(int i=0;i<data.size();i++){
-        
+       chunks_count++;
+       for(int i=0;i<data.size();i++){
             Reference current=data[i];
             int number =current.length-strobemer::strobmer_span()+1; 
-
             if(number<0) continue;
-
-            //std::cout<<"seq是："<<current.seq.c_str()<<std::endl;
-            // std::cout<<"length的值是："<<current.length<<std::endl;
-            // std::cout<<"number的值是："<<number<<std::endl;
-            // std::cout<<"span的值是："<<strobemer::strobmer_span()<<std::endl;
-            int validLength=0;
-           
-            strobemer * buff = new strobemer[number];
+            auto start1 = std::chrono::high_resolution_clock::now();
+            strobemer::chop_randstrobemers(current,consumerbuff);
+            auto finish1 = std::chrono::high_resolution_clock::now();
+            elapsed += finish1 - start1;
+            // for(int i=0;i<consumerbuff.strobemers.size();i++){
+            //     std::cout<<consumerbuff.strobemers[i]<<std::endl;
+            // }
             
-            strobemer::chop_strobemer_byKmer(current.seq.c_str(),current.length,buff,validLength);
-            
-
-            //pthread_mutex_lock(&output_mutex);
-            
-            //std::cout<<"程序断点3"<<std::endl;
-            outputStream<<">"<<current.name<<'\n';
-            for(int j=0;j<=validLength;j++){
-                //std::cout<<"validLength为"<<validLength<<std::endl;
-                //if(buff[i].valid){
-                    outputStream<<buff[j].to_string()<<'\n';
-                    
-                //}
-            
-            }
-            
-           
-            //pthread_mutex_unlock(&output_mutex);
-            delete []buff;
-            
-            
+                  
         }
-        std::vector<Reference>().swap(data);//释放vector
-
-        chunks_count++;
-        //std::cout<<"chunks_count为："<<chunks_count<<std::endl;
 
         if(chunks_count%10==0){
-            pthread_mutex_lock(&output_mutex);
-            std::cout<<"线程"<<sin.str()<<"完成"<<outputName<<std::endl;
-            outputName=output_file+"output"+to_string(file_count)+".fasta";
-            file_count++;
-            pthread_mutex_unlock(&output_mutex);
+           
+            std::cout<<"线程"<<sin.str()<<"完成"<<chunks_count<<"chunks"<<std::endl;
+            
         }
-        
-        
     }
     
-    //std::cout<<"线程： "<<sin.str()<<"已返回"<<std::endl;
-    
-    
+    std::vector<Reference>().swap(data);
     return 0;
 }
 
@@ -196,6 +141,9 @@ int consumer_task(std::string output_file,rabbit::fa::FastaDataPool& fastapool,r
 //看看chop里的length是不是序列长度 看看seq的l是不是长度
 int main(int argc, char *argv[])
 {   
+
+    // Record  start time
+    auto start = std::chrono::high_resolution_clock::now(); 
     if (argc < 2) {
         print_usage();
         return 0;
@@ -207,11 +155,11 @@ int main(int argc, char *argv[])
     int n = 2;
     int k = 20;
     //std::string output_file_name = "./output/output.fasta";
-    std::string output_path="/home/old_home/ljj/graDesign/code/output";
+    std::string output_path="/home/old_home/ljj/graDesign/code/output/";
     int w_min = k+1;
     int w_max = 70;
    
-    int n_threads = 3;
+    int n_threads = 20;
     int opn = 1;
 
     int chopMethod=0;
@@ -288,174 +236,41 @@ int main(int argc, char *argv[])
 	 }
 	 
 
-     //初始化临界区
-    pthread_mutex_init(&output_mutex,NULL);
-    file_count=0;
-   
-	// Record  start time
-    auto start = std::chrono::high_resolution_clock::now(); 
-    
-    // DIR *dirp;
-    // struct dirent *direntp;
-    // dirp=opendir(argv[opn]);
-   
-    
-	
-    // gzFile fp;
-    // kseq_t *seq;
-    // int l;
      
    
-    std::string path=argv[opn];
-    path=path+'/';
-    output_path=output_path+'/';
-    
-    
-   // long int count=0;
-    //long int total=500;
-   
-    // while (((direntp=readdir(dirp))!=NULL))
-    // {
-    //     total++;
-    //     std::cout<<total<<std::endl;
-    // }
+    std::string file=argv[opn];
+    rabbit::fa::FastaDataPool datapool(256,1<<22);
+    rabbit::core::TDataQueue<rabbit::fa::FastaChunk> queue1(128,1);
 
-    // rewinddir(dirp);
-
-    
-   
-    
-    //#pragma omp parallel for num_threads(n_threads)
-    
-    //for (int i = 1; i <= total; i++){   
-    //while (((direntp=readdir(dirp))!=NULL)){    
-        //direntp=readdir(dirp);
-        //尝试读取fasta文件中的序列
-        //std::cout<<direntp->d_name<<std::endl;
-        //if(!check(direntp->d_name)) continue;
-        
-        //std::string d_name=direntp->d_name;
-
-        rabbit::fa::FastaDataPool datapool(256,1<<22);
-        rabbit::core::TDataQueue<rabbit::fa::FastaChunk> queue1(128,1);
-
-        std::thread producer(producer_task,path,std::ref(datapool),std::ref(queue1));
-        std::vector<std::thread> consumers;
-
-        for(int i=0;i<n_threads;i++){
-            consumers.emplace_back(std::thread(consumer_task,output_path,std::ref(datapool),std::ref(queue1),n_threads));
-        }
-
-        producer.join();
-
-        for(int t=0;t<n_threads;t++){
-            consumers[t].join();
-            
-        }
-	    std::cout<<"所有的消费者已经返回"<<std::endl;
-        
-        // gzFile fp;
-        // kseq_t *seq;
-        // int l;
-         
-        
-        //std::cout<<"执行到这,文件路径是："<<path+d_name<<std::endl;
-        
-        // std::ofstream output_file;
-        // output_file.open(output_path+d_name);
-        //std::cout<<"执行到这,文件路径是："<<output_path+d_name<<std::endl;
-
-        // fp=gzopen((path+d_name).c_str(),"r");
-        // seq= kseq_init(fp);
+    std::vector<consumerBuff> consumerBuffSet;
+    consumerBuffSet.reserve(n_threads);
+    for(int i=0;i<n_threads;i++){
+        consumerBuffSet.emplace_back(i,strobemer::nkmer*strobemer::ksize);
+    }
        
-        // while ((l = kseq_read(seq)) >= 0) {
-    
-        //     int number = seq->seq.l-strobemer::strobmer_span()+1; 
-        //     strobemer * buff = new strobemer[number];
-        //     strobemer::chop_strobemer(seq->seq.s,seq->seq.l,buff);
-        //     output_file<<">"<<seq->name.s<<'\n';
-        //     //std::cout<<"序列名："<<seq->name.s<<std::endl;
-        //     for(int i = 0 ; i< number ; i++ ){
-        //         if(buff[i].valid)
-        //             output_file<<buff[i].to_string()<<'\n'; // or do whatever you want ...
-        //             //std::cout<<buff[i].to_string()<<'\n';;
-        //     }
-            
-        //     delete [] buff;
-	    // }
-        // output_file.close();
-        // kseq_destroy(seq);
-	    // gzclose(fp);
         
 
-        //int rank=omp_get_thread_num();
-        //std::cout<<"线程"<<rank<<"已完成第"<<i<<"个文件"<<std::endl;
-        // if(i%100==0) {
-        //     std::cout<<"已完成："<<i<<"/"<<total<<std::endl;
-        // }
-   
-    //}
-    // closedir(dirp);
-    pthread_mutex_destroy(&output_mutex);
-    
-    
-    // while (((direntp=readdir(dirp))!=NULL)){
+    std::thread producer(producer_task,file,std::ref(datapool),std::ref(queue1));
+    std::vector<std::thread> consumers;
         
         
-    //     //尝试读取fasta文件中的序列
-    //     if(!check(direntp->d_name)) continue;
-        
-        
-    //     std::string d_name=direntp->d_name;
-    //     //std::cout<<"执行到这,文件路径是："<<path+d_name<<std::endl;
-        
-    //     std::ofstream output_file;
-    //     output_file.open(output_path+d_name);
-    //     //std::cout<<"执行到这,文件路径是："<<output_path+d_name<<std::endl;
 
-    //     fp=gzopen((path+d_name).c_str(),"r");
-    //     seq= kseq_init(fp);
-    //     //test
-    //     while ((l = kseq_read(seq)) >= 0) {
-    //         // printf("name: %s\n", seq->name.s);//序列的序列号
-    //         // if (seq->comment.l) printf("comment: %s\n", seq->comment.s);
-    //         // printf("seq: %s\n", seq->seq.s);//基因序列
-    //         // if (seq->qual.l) printf("qual: %s\n", seq->qual.s);
-            
-    //         int number = seq->seq.l-strobemer::strobmer_span()+1; 
-    //         strobemer * buff = new strobemer[number];
-    //         strobemer::chop_strobemer(seq->seq.s,seq->seq.l,buff);
-    //         output_file<<">"<<seq->name.s<<'\n';
-    //         //std::cout<<"序列名："<<seq->name.s<<std::endl;
-    //         for(int i = 0 ; i< number ; i++ ){
-    //             if(buff[i].valid)
-    //                 output_file<<buff[i].to_string()<<'\n'; // or do whatever you want ...
-    //                 //std::cout<<buff[i].to_string()<<'\n';;
-    //         }
-            
-    //         delete [] buff;
-	//     }
-    //     output_file.close();	
+    for(int i=0;i<n_threads;i++){
+            consumers.emplace_back(std::thread(consumer_task,output_path,std::ref(datapool),std::ref(queue1),std::ref(consumerBuffSet[i])));
+    }
 
-    //     count++;
-    //     if(count%100==0) {
-    //         std::cout<<"已完成："<<count<<"/"<<total<<std::endl;
-    //     }
-    //     if (count==500) break;
+    producer.join();
+        //std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 
-        
-        
-    //}
-    //std::cout<<"count:"<<count<<std::endl;
-    
-	//output_file.close();
-	// kseq_destroy(seq);
-	// gzclose(fp);
-
+    for(int t=0;t<n_threads;t++){
+         consumers[t].join();
+    }
+	std::cout<<"所有的消费者已经返回"<<std::endl;
     auto finish = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> elapsed_mers = finish - start;
-    float rounded = truncf(elapsed_mers.count() * 10) / 10;
-    std::cout << "总耗时 " << rounded << " s\n" <<  std::endl;
+    std::chrono::duration<double> totalElapsed = finish - start;
+    std::cout << "用randstrobemers计算完所有的strobemer需要 " << elapsed.count() << "微秒" <<  std::endl;
+    std::cout << "总耗时 " << totalElapsed.count() << "秒" <<  std::endl;
+
 
 
 

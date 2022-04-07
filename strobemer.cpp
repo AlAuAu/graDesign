@@ -5,6 +5,7 @@
 #include<vector>
 
 
+
 /**********************************************************
  *
  * hash kmer into uint64
@@ -223,7 +224,7 @@ void strobemer::chop_strobemer_byKmer(const char *seq,int len,strobemer *buff,in
 
 static inline void make_seq_to_kmer(const char * seq, int len, std::vector<uint64_t> &string_hashes, std::vector<unsigned int> &pos_to_seq_choord, int k, uint64_t kmask) {
 
-    unsigned int hash_count = 0;
+    //unsigned int hash_count = 0;
     int l;
     int i;
     uint64_t x = 0;
@@ -233,9 +234,9 @@ static inline void make_seq_to_kmer(const char * seq, int len, std::vector<uint6
             x = (x << 2 | c) & kmask;                 
             if (++l >= k) { 
                 uint64_t hash_k = hash64(x, kmask);
-                string_hashes.push_back(hash_k);
-                pos_to_seq_choord.push_back( i - k + 1);
-                hash_count ++;
+                string_hashes.emplace_back(hash_k);
+                pos_to_seq_choord.emplace_back( i - k + 1);
+                //hash_count ++;
             }
         } else {
             l = 0, x = 0; // if there is an "N", restart
@@ -487,7 +488,7 @@ void strobemer::chop_randstrobe_byKmer(const char * seq,int len, strobemer * buf
     //std::cout<<"调用的是randstrobes"<<std::endl;
     std::vector<uint64_t> kmer_hashes;//kmer对应的hash值
     std::vector<unsigned int> positon_ofSeq;//每个kmer对应在seq中的位置
-    make_seq_to_kmer(seq,len,kmer_hashes,positon_ofSeq,strobemer::ksize,strobemer::nkmer);
+    make_seq_to_kmer(seq,len,kmer_hashes,positon_ofSeq,strobemer::ksize,strobemer::kmask);
     validLength=kmer_hashes.size()-strobemer::span;
     
     for(int i=0;i<=validLength;i++){
@@ -565,6 +566,105 @@ void strobemer::chop_hybridstrobe_byKmer(const char * seq,int len, strobemer * b
     }
 
 }
+
+void strobemer::chop_randstrobemers(Reference &data,consumerBuff &consumerbuff){
+    // sanity check ...
+    const char *seq=data.seq.c_str();
+    int len=data.length;
+
+    assert(seq!=nullptr);
+    assert(len>=strobemer::span);
+    consumerbuff.reset(len);
+    make_seq_to_kmer(seq,len,consumerbuff.kmer_hashes,consumerbuff.position_ofSeq,strobemer::ksize,strobemer::kmask);
+    int validLength=consumerbuff.kmer_hashes.size()-strobemer::span;
+    
+    
+    for(int i=0;i<=validLength;i++){
+       
+        unsigned int p0 =consumerbuff.position_ofSeq[i] ;
+        strncpy(consumerbuff.strobemerBuff, &seq[p0],strobemer::ksize);
+        
+        uint64_t h_prev = consumerbuff.kmer_hashes[i];
+        // 1.1 find the ki minimizer in [wi_s , wi_e)
+        int wi_s = i+strobemer::wmin;
+        int wi_e = wi_s+strobemer::kspan ;
+        int k_shift = strobemer::ksize;
+        
+        for( int ki=1; ki<strobemer::nkmer ; ki++){
+            unsigned int p_next = -1;
+            uint64_t temp_min ;
+            uint64_t h_now;
+            for( int j = wi_s ; j < wi_e ; j++ ){
+                h_now = h_prev ^ consumerbuff.kmer_hashes[j];
+                if ( p_next == -1 || h_now < temp_min ) {
+                    temp_min = h_now;
+                    p_next = consumerbuff.position_ofSeq[j] ;
+                }
+            }
+            
+            strncpy(&consumerbuff.strobemerBuff[k_shift], &seq[p_next],strobemer::ksize);
+            //std::cout<<strobemerBuff<<std::endl;
+            wi_s=wi_s+strobemer::wsize;
+            wi_e=wi_s+strobemer::kspan;
+            k_shift += strobemer::ksize;
+            h_prev = h_now ;
+        
+        }
+           
+
+    }
+    
+
+   
+ 
+
+}
+
+
+void strobemer::chop_minstrobemers(const char *seq,int len,std::vector<char *>&buff,int& validLength){
+    // sanity check ...
+    assert(seq!=nullptr);
+    assert(len>=strobemer::span);
+    //std::cout<<"调用的是minstrobes"<<std::endl;
+    std::vector<uint64_t> kmer_hashes;
+    std::vector<unsigned int> position_ofSeq;
+    make_seq_to_kmer(seq,len,kmer_hashes,position_ofSeq,strobemer::ksize,strobemer::kmask);
+    validLength=kmer_hashes.size()-strobemer::span;
+
+    for(int i=0;i<=validLength;i++){
+        // 1. construct forward strobemer in [i,w1_s) [w1_s , w1_e) ....
+        unsigned int p0 = position_ofSeq[i] ;
+        char * s=new char[strobemer::nkmer*strobemer::ksize];
+        strncpy(s, &seq[p0],strobemer::ksize);
+        // 1.1 find the ki minimizer in [wi_s , wi_e)
+        int wi_s = i+strobemer::wmin;
+        int wi_e = wi_s+strobemer::kspan ;
+        int k_shift = strobemer::ksize;
+        for( int ki=1; ki<strobemer::nkmer ; ki++){
+            unsigned int p_next = -1;
+            uint64_t temp_min ;
+            uint64_t h_now;
+            for( int j = wi_s ; j < wi_e ; j++ ){
+                h_now = kmer_hashes[j] ; // minstrobe calculate hash value independantly
+                if ( p_next == -1 || h_now < temp_min ) {
+                    temp_min = h_now;
+                    p_next = position_ofSeq[j] ;
+                }
+            }
+            strncpy(&s[k_shift], &seq[p_next],strobemer::ksize);
+            wi_s=wi_s+strobemer::wsize;
+            wi_e=wi_s+strobemer::kspan;
+            k_shift += strobemer::ksize;
+        }
+
+        buff.emplace_back(s);
+        delete []s;
+
+    }
+
+}
+
+
 
 strobemer::strobemer() {
     kmer_forward = new char[nkmer*ksize];

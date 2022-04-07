@@ -134,6 +134,7 @@ int chunkListFormat(FastaChunk &fachunk, vector<Reference> &refs) {
  * @return Total number of Reference instance in vector refs.
  */
 int chunkFormat(FastaChunk &fachunk, vector<Reference> &refs) {
+  std::cout<<"执行chunkFormat函数"<<std::endl;
   uint64 pos = 0;
   bool done = false;
   // cerr << "into chunkFormat" << endl;

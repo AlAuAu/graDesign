@@ -3,6 +3,9 @@
 
 #include <stdint.h>
 #include <string>
+#include<vector>
+#include"io/Formater.h"
+#include"consumerBuff.h"
 
 // type of strobemer
 enum strobemer_type{
@@ -18,12 +21,17 @@ class strobemer {
         static void chop_strobemer(const char * seq,int len, strobemer * buff);
         //static void chop_minstrobe_byKmer(const char * seq,int len, strobemer * buff,int &validLength);
         static void chop_strobemer_byKmer(const char *seq,int len,strobemer *buff,int& validLength);
+        static void chop_randstrobemers(Reference &data,consumerBuff &consumerbuff);
+        static void chop_minstrobemers(const char *seq,int len,std::vector<char *>&buff,int& validLength);
+        //static void chop_randstrobemers1(const char *seq,int len,char **&buff,int& validLength);
+        
         //static void chop_randstrobe_byKmer(const char * seq,int len,strobemer *buff,int &validLength);
         //static void chop_hybridstrobe_byKmer(const char * seq,int len, strobemer * buff,int &validLength);
         static int strobmer_span() { return span ; }
-    private:
         static int nkmer;
         static int ksize;
+    private:
+        
         static int wsize; // w_max here
         static int wmin;  // w_min
         static int span ; //W=k+2w=7+2*12=31
