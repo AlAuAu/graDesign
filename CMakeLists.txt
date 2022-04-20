@@ -1,4 +1,6 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 3.0)
+set(CMAKE_CXX_COMPILER "/opt/intel/oneapi/compiler/2021.4.0/linux/bin/intel64/icpc")
+set(CMAKE_C_COMPILER "/opt/intel/oneapi/compiler/2021.4.0/linux/bin/intel64/icc")
 
 #给工程取一个名字
 project(strobemer)
@@ -7,7 +9,8 @@ project(strobemer)
 find_package(OpenMP REQUIRED)
 if(OPENMP_FOUND)
 message("OPENMP FOUND")
-set(CMAKE_CXX_COMPILER "/usr/bin/g++")
+#set(CMAKE_CXX_COMPILER "/usr/bin/g++")
+#set(CMAKE_CXX_COMPILER "/opt/intel/oneapi/compiler/2021.4.0/linux/bin/intel64/icpc")
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DVERB")
@@ -17,7 +20,8 @@ endif()
 
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_FLAGS "-O3 -g -ffast-math ${CMAKE_CXX_FLAGS}")
+#set(CMAKE_CXX_FLAGS "-O3 -g -march=native -ffast-math ${CMAKE_CXX_FLAGS}")
+set(CMAKE_CXX_FLAGS "-O3 -g -ffast-math -march=native  ${CMAKE_CXX_FLAGS}")
 
 
 #把rabbitfx引入   

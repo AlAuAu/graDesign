@@ -71,8 +71,9 @@ int producer_task(std::string file,rabbit::fa::FastaDataPool & fastapool,rabbit:
     
     rabbit::int64 n_chunks=0;
     
-    std::cout<<"数据的path是"<<file<<std::endl;
+    //std::cout<<"数据的path是"<<file<<std::endl;
     rabbit::fa::FastaFileReader faFileReader(file,fastapool);
+    std::cout<<"数据的path是"<<file<<std::endl;
      while(true){
             rabbit::fa::FastaChunk* fachunk;
             fachunk = faFileReader.readNextChunk();
@@ -111,24 +112,32 @@ int consumer_task(std::string output_file,rabbit::fa::FastaDataPool& fastapool,r
        chunks_count++;
        for(int i=0;i<data.size();i++){
             Reference current=data[i];
+            
             int number =current.length-strobemer::strobmer_span()+1; 
             if(number<0) continue;
+            
             auto start1 = std::chrono::high_resolution_clock::now();
-            strobemer::chop_randstrobemers(current,consumerbuff);
+            strobemer::chop_minstrobemers(current,consumerbuff,false);
             auto finish1 = std::chrono::high_resolution_clock::now();
             elapsed += finish1 - start1;
+
+            // auto start2 = std::chrono::high_resolution_clock::now();
+            // strobemer::chop_randstrobemers(current,consumerbuff);
+            // auto finish2 = std::chrono::high_resolution_clock::now();
+            // elapsed1 += finish2 - start2;
             // for(int i=0;i<consumerbuff.strobemers.size();i++){
             //     std::cout<<consumerbuff.strobemers[i]<<std::endl;
             // }
+           
             
                   
         }
 
-        if(chunks_count%10==0){
+        // if(chunks_count%10==0){
            
-            std::cout<<"线程"<<sin.str()<<"完成"<<chunks_count<<"chunks"<<std::endl;
+        //     std::cout<<"线程"<<sin.str()<<"完成"<<chunks_count<<"chunks"<<std::endl;
             
-        }
+        // }
     }
     
     std::vector<Reference>().swap(data);
@@ -159,7 +168,7 @@ int main(int argc, char *argv[])
     int w_min = k+1;
     int w_max = 70;
    
-    int n_threads = 20;
+    int n_threads = 1;
     int opn = 1;
 
     int chopMethod=0;
@@ -244,8 +253,10 @@ int main(int argc, char *argv[])
 
     std::vector<consumerBuff> consumerBuffSet;
     consumerBuffSet.reserve(n_threads);
+    
     for(int i=0;i<n_threads;i++){
-        consumerBuffSet.emplace_back(i,strobemer::nkmer*strobemer::ksize);
+        std::string name=output_path+"output"+to_string(i)+".fna";
+        consumerBuffSet.emplace_back(i,10000,strobemer::nkmer,name);
     }
        
         
@@ -269,6 +280,7 @@ int main(int argc, char *argv[])
     auto finish = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> totalElapsed = finish - start;
     std::cout << "用randstrobemers计算完所有的strobemer需要 " << elapsed.count() << "微秒" <<  std::endl;
+    //std::cout << "用randstrobemers1计算完所有的strobemer需要 " << elapsed1.count() << "微秒" <<  std::endl;
     std::cout << "总耗时 " << totalElapsed.count() << "秒" <<  std::endl;
 
 

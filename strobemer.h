@@ -22,14 +22,15 @@ class strobemer {
         //static void chop_minstrobe_byKmer(const char * seq,int len, strobemer * buff,int &validLength);
         static void chop_strobemer_byKmer(const char *seq,int len,strobemer *buff,int& validLength);
         static void chop_randstrobemers(Reference &data,consumerBuff &consumerbuff);
-        static void chop_minstrobemers(const char *seq,int len,std::vector<char *>&buff,int& validLength);
-        //static void chop_randstrobemers1(const char *seq,int len,char **&buff,int& validLength);
+        static void chop_minstrobemers(Reference &data,consumerBuff &consumerbuff,bool write_flag);
+        //static void chop_randstrobemers1(Reference &data,consumerBuff &consumerbuff);
         
         //static void chop_randstrobe_byKmer(const char * seq,int len,strobemer *buff,int &validLength);
         //static void chop_hybridstrobe_byKmer(const char * seq,int len, strobemer * buff,int &validLength);
         static int strobmer_span() { return span ; }
         static int nkmer;
         static int ksize;
+        static uint64_t kmask;
     private:
         
         static int wsize; // w_max here
@@ -37,7 +38,7 @@ class strobemer {
         static int span ; //W=k+2w=7+2*12=31
         static int kspan; //kspan=w-k+1; define a minimizer of how many kmers.
         static strobemer_type type;
-        static uint64_t kmask;//kmask=(1ULL<<2*k)-1
+        //kmask=(1ULL<<2*k)-1
     public:
         bool valid ;
         strobemer(); 
